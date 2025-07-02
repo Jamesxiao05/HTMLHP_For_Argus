@@ -150,9 +150,141 @@ def get_content_from_nested_structure(nested_dict, num):
 
     return final_soup
 
+
+
+"-----"
+
+TOP_LEVEL_COUNT = 5  # Number of top-level sections (e.g., h1 sections)
+BOTTOM_LEVEL_COUNT = 3  # Number of bottom-level sections per top-level (e.g., h2 sections)
+
+def split_html_by_tag(html_content, tag_name):
+    soup = BeautifulSoup(html_content, "html.parser")
+    tags = soup.find_all(tag_name)
+    all_elements = list(soup.descendants)
+    sections = {}
+    for i, tag in enumerate(tags):
+        tag_index = all_elements.index(tag)
+        if i + 1 < len(tags):
+            next_tag = tags[i + 1]
+            next_tag_index = all_elements.index(next_tag)
+        else:
+            next_tag_index = len(all_elements)
+        section_html = ''.join(str(elem) for elem in all_elements[tag_index + 1:next_tag_index])
+        section_soup = BeautifulSoup(section_html, "html.parser")
+        section_name = tag.get_text(strip=True)
+        sections[section_name] = section_soup
+    return sections
+
+def wrap_soup_in_homepage(soup, title="Home"):
+    html_template = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{title}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {{
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #f8f9fa;
+            margin: 0;
+            padding: 0;
+        }}
+        .container {{
+            max-width: 900px;
+            margin: 40px auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+            padding: 32px 40px;
+        }}
+        h1, h2, h3 {{
+            color: #2c3e50;
+            margin-top: 1.5em;
+        }}
+        h1 {{
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 0.3em;
+        }}
+        h2 {{
+            border-left: 4px solid #3498db;
+            padding-left: 0.5em;
+            margin-top: 1.2em;
+        }}
+        p {{
+            color: #444;
+            line-height: 1.7;
+        }}
+        ul, ol {{
+            margin-left: 2em;
+        }}
+        a {{
+            color: #3498db;
+            text-decoration: none;
+        }}
+        a:hover {{
+            text-decoration: underline;
+        }}
+        @media (max-width: 600px) {{
+            .container {{
+                padding: 16px 8px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        {soup.prettify()}
+    </div>
+</body>
+</html>
+"""
+    return html_template
+
+def get_template(dic, num):
+    """
+    Selects and returns a value from the nested dictionary based on num.
+    """
+    global TOP_LEVEL_COUNT
+    global BOTTOM_LEVEL_COUNT
+
+    top_keys = list(dic.keys())
+    top_index = num % TOP_LEVEL_COUNT
+    top_key = top_keys[top_index]
+
+    bottom_keys = list(dic[top_key].keys())
+    bottom_index = num % BOTTOM_LEVEL_COUNT
+    bottom_key = bottom_keys[bottom_index]
+
+    return dic[top_key][bottom_key]
+
+def generate_html_from_template_number(n):
+    global nested_sections
+    return wrap_soup_in_homepage(get_template(nested_sections, n-1), title="Home")
+
+# Example usage:
+with open("FakeData.html", "r", encoding="utf-8") as f:
+    html = f.read()
+# First split by h1
+h1_sections = split_html_by_tag(html, "h1")
+# Now, for each h1 section, split by h2 and nest
+nested_sections = {}
+for h1_name, h1_soup in h1_sections.items():
+    h2_sections = split_html_by_tag(str(h1_soup), "h2")
+    nested_sections[h1_name] = h2_sections if h2_sections else h1_soup
+
+"-----"
+
+
+
+
+
 def generate_page_for_bot(template_number):
     """The main generator function that takes a number and returns full HTML."""
     global nested_sections
+    return generate_html_from_template_number(template_number)
+    
+    print(f"{len(nested_sections) = }")
     selected_soup = get_content_from_nested_structure(nested_sections, template_number)
     return wrap_soup_in_homepage(selected_soup, title="Bot Information Page")
 
@@ -200,19 +332,29 @@ def get_or_create_bot_template_id(bot_name: str) -> int:
     """
     Checks cache or DB for a bot's template ID. If not found, creates a new random one.
     """
+    print("here 1")
     if bot_name in BOT_CACHE and (time.time() - BOT_CACHE[bot_name]['timestamp']) < CONFIG["CACHE_DURATION_SECONDS"]:
         logging.info(f"'{bot_name}' found in cache. Serving cached template.")
+        print("here 2")
+        print(f"{bot_name}...")
+        print(f"{BOT_CACHE[bot_name]}")
+        print(f"{BOT_CACHE[bot_name]['template_id']}")
         return BOT_CACHE[bot_name]['template_id']
     try:
+        print("here 3")
         response = supabase.table('bot_visits').select('template_id').eq('bot_name', bot_name).execute()
         if response.data:
             template_id = response.data[0]['template_id']
             logging.info(f"'{bot_name}' is a returning bot. Found template: {template_id} in DB.")
+            print("here 4")
         else:
+            print("here 5")
             template_id = create_new_bot_entry(bot_name)
         BOT_CACHE[bot_name] = {'template_id': template_id, 'timestamp': time.time()}
+        print("here 6")
         return template_id
     except Exception as e:
+        print("here 7")
         logging.error(f"Database query/update failed for bot '{bot_name}': {e}")
         raise
 
@@ -230,8 +372,11 @@ def serve_content():
             abort(500, description="Server content source is not available.")
         try:
             template_id = get_or_create_bot_template_id(bot_name)
+            print("here 11")
 
+            print(f"{template_id}")
             html_content = generate_page_for_bot(template_id)
+            print("here 12")
             return Response(html_content, mimetype='text/html')
 
         except Exception as e:
@@ -242,4 +387,4 @@ def serve_content():
         return render_template('index.html')
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=8081)
