@@ -121,21 +121,32 @@ def get_content_from_nested_structure(nested_dict, num):
     # Check if the h1 section has nested h2 sections
     if isinstance(h1_section_content, dict) and h1_section_content:
         bottom_keys = list(h1_section_content.keys())
+        
+        # Only proceed if there are actually H2 sections
+        if bottom_keys:
+            # Calculate which H2 section to use within the H1.
+            # The formula (num - 1) % 3 gives us the position within the group (0, 1, 2).
+            bottom_index_calc = (num - 1) % CONFIG["TEMPLATES_PER_TYPE"]
 
-        # Calculate which H2 section to use within the H1.
-        # The formula (num - 1) % 3 gives us the position within the group (0, 1, 2).
-        bottom_index_calc = (num - 1) % CONFIG["TEMPLATES_PER_TYPE"]
+            # Use modulo on the *actual number of H2s in this specific section*.
+            # If we need the 3rd H2 but only 2 exist, this wraps to the 1st.
+            bottom_index = bottom_index_calc % len(bottom_keys)
+            bottom_key = bottom_keys[bottom_index]
 
-        # Use modulo on the *actual number of H2s in this specific section*.
-        # If we need the 3rd H2 but only 2 exist, this wraps to the 1st. THIS IS THE FIX.
-        bottom_index = bottom_index_calc % len(bottom_keys)
-        bottom_key = bottom_keys[bottom_index]
-
-        final_soup.append(BeautifulSoup(f"<h2>{bottom_key}</h2>", "html.parser"))
-        final_soup.append(h1_section_content[bottom_key])
+            final_soup.append(BeautifulSoup(f"<h2>{bottom_key}</h2>", "html.parser"))
+            final_soup.append(h1_section_content[bottom_key])
+        else:
+            # If the dict is empty, treat it as direct content
+            logging.warning(f"H1 section '{top_key}' has empty H2 sections. Using fallback content.")
+            final_soup.append(BeautifulSoup("<p>Content not available.</p>", "html.parser"))
     else:
         # If no H2s, append the direct content of the H1 section.
-        final_soup.append(h1_section_content)
+        if h1_section_content:
+            final_soup.append(h1_section_content)
+        else:
+            # Fallback if content is completely empty
+            logging.warning(f"H1 section '{top_key}' has no content. Using fallback.")
+            final_soup.append(BeautifulSoup("<p>Content not available.</p>", "html.parser"))
 
     return final_soup
 
