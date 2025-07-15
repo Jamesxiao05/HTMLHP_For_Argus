@@ -12,6 +12,7 @@ import random
 import time
 import logging
 import re
+import traceback
 from flask import Flask, request, render_template, abort, Response
 from supabase import create_client
 from user_agents import parse
@@ -387,6 +388,8 @@ def stringify_fake_datum(fake_datum, type: str):
                     return str(int(result))
                 return str(result)
             except Exception:
+                print(f"Error #1")
+                traceback.print_exc()
                 return str(fake_datum)
         return str(fake_datum)
     elif type.startswith("date"):
@@ -742,6 +745,8 @@ def get_or_create_bot_template_id(bot_name: str) -> tuple[int, int]:
         }
         return template_id, seed
     except Exception as e:
+        print(f"Error #2")
+        traceback.print_exc()
         logging.error(f"Database query/update failed for bot '{bot_name}': {e}")
         raise
 
@@ -771,6 +776,8 @@ def serve_content():
             return Response(html_content, mimetype="text/html")
 
         except Exception as e:
+            print(f"Error #3")
+            traceback.print_exc()
             logging.critical(
                 f"A critical error occurred while processing bot request: {e}"
             )
@@ -791,10 +798,14 @@ if __name__ == "__main__":
             f"Successfully parsed FakeData.html into {len(nested_sections)} top-level sections."
         )
     except FileNotFoundError:
+        print(f"Error #4")
+        traceback.print_exc()
         logging.error(
             "CRITICAL: FakeData.html not found. The application cannot serve bot content."
         )
     except Exception as e:
+        print(f"Error #5")
+        traceback.print_exc()
         logging.error(f"CRITICAL: Failed to parse FakeData.html: {e}")
 
     # --- Supabase Client Initialization ---
