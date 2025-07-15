@@ -12,6 +12,7 @@ beautifulsoup4 = "^4.13.4"
 python-dotenv = "^1.1.1"
 supabase = "^2.16.0"
 user-agents = "^2.2.0"
+faker = "^37.4.0"
 
 [tool.poetry.group.dev.dependencies]
 ipython = "^9.4.0"

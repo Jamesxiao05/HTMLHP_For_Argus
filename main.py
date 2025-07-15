@@ -235,8 +235,6 @@ def generate_fake_data_for_type(type_index: int, seed: int = 0):
     If seed is 0, generate a random seed and use it.
     Returns a dictionary: {seed: tuple_of_faker_objects}
     """
-    from faker import Faker
-    import random
 
     # Pick/generate seed
     if seed == 0:
