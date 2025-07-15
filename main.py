@@ -1,25 +1,43 @@
+"""
+A Flask application that serves dynamic HTML content based on templates and generates fake data for bots.
+It uses Supabase for storing bot visits and user agents to detect bots.
+The application reads a master HTML file, parses it into a nested structure, and generates HTML content
+based on user requests.
+"""
+
+
+# --- Imports ---
 import os
 import random
 import time
 import logging
 import re
 from flask import Flask, request, render_template, abort, Response
-from supabase import create_client, Client
+from supabase import create_client
 from user_agents import parse
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from faker import Faker
 
 # --- Load environment variables ---
+""" The dotenv file should contain:
+SUPABASE_URL=<your_supabase_url>
+SUPABASE_KEY=<your_supabase_key>
+IPINFO_TOKEN=<your_ipinfo_token>
+"""
 load_dotenv()
 
 # --- Configuration ---
+""" Configure logging to output to console with timestamps and log level """
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 # --- Global Variables ---
-
+""" Configuration for the number of templates and cache duration.
+This configuration is used to determine how many template types, templates per type,
+and the total number of templates are available.
+Also includes a cache duration for bot data to reduce database queries."""
 CONFIG = {
     "NUM_TEMPLATE_TYPES": 5,  # Corresponds to the number of H1 sections to use
     "TEMPLATES_PER_TYPE": 3,  # Corresponds to the number of H2 sections per H1
@@ -27,13 +45,14 @@ CONFIG = {
     "CACHE_DURATION_SECONDS": 600,
     "FAKE_DATA_VAR_COUNT": 12,  # Number of fake data variables per type
 }
+
+""" Cache for bot data to avoid frequent database queries.
+This cache stores the template ID and seed for each bot, along with a timestamp
+to determine if the cache is still valid based on CACHE_DURATION_SECONDS."""
 BOT_CACHE = {}
 
-TOP_LEVEL_COUNT = 5  # Number of top-level sections (e.g., h1 sections)
-BOTTOM_LEVEL_COUNT = (
-    3  # Number of bottom-level sections per top-level (e.g., h2 sections)
-)
-
+""" A list of tuples defining the structure of fake data types.
+Each tuple contains a type name and a list of fields that can be generated."""
 FAKE_DATA_TYPES = (
     (
         "Companies",
@@ -122,9 +141,8 @@ FAKE_DATA_TYPES = (
     ),
 )
 
+
 # --- HTML Parsing and Content Generation Functions ---
-
-
 def parse_master_html(html_content):
     """
     Parses the master HTML file into a nested dictionary of H1 and H2 sections.
@@ -350,7 +368,12 @@ def stringify_fake_datum(fake_datum, type: str):
             return fake_datum.first_name
         else:
             return fake_datum.full_name
-    elif type.startswith("number") or type.startswith("count") or type.startswith("dollars") or type.startswith("price"):
+    elif (
+        type.startswith("number")
+        or type.startswith("count")
+        or type.startswith("dollars")
+        or type.startswith("price")
+    ):
         # Support math in placeholder, e.g. {number + 23}, {count * 4}
         math_expr = re.match(r"^([a-zA-Z0-9 _-]+)\s*([\+\-\*/])\s*([0-9\.]+)$", type)
         if math_expr:
@@ -370,8 +393,13 @@ def stringify_fake_datum(fake_datum, type: str):
         # Format date as 'nth of Month YYYY'
         if isinstance(fake_datum, (str, int)):
             return str(fake_datum)
+
         def ordinal(n):
-            return "%d%s" % (n, "tsnrhtdd"[(n//10%10!=1)*(n%10<4)*n%10::4])
+            return "%d%s" % (
+                n,
+                "tsnrhtdd"[(n // 10 % 10 != 1) * (n % 10 < 4) * n % 10 :: 4],
+            )
+
         return f"{ordinal(fake_datum.day)} of {fake_datum.strftime('%B %Y')}"
     elif type.startswith("year"):
         # Return year as a string
@@ -397,22 +425,31 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
         # Define pronoun sets
         pronoun_sets = {
             "male": {
-                "he": "he", "him": "him", "his": "his", "himself": "himself",
+                "he": "he",
+                "him": "him",
+                "his": "his",
+                "himself": "himself",
             },
             "female": {
-                "he": "she", "him": "her", "his": "her", "himself": "herself",
+                "he": "she",
+                "him": "her",
+                "his": "her",
+                "himself": "herself",
             },
             "they": {
-                "he": "they", "him": "them", "his": "their", "himself": "themself",
+                "he": "they",
+                "him": "them",
+                "his": "their",
+                "himself": "themself",
             },
         }
-    
+
         # Normalize input to lowercase for lookup
         base = pronoun_type.lower()
         # Pick which set to use based on seed
         choice = ["male", "female", "they"][seed % 3]
         pronoun = pronoun_sets[choice].get(base, base)
-    
+
         # Preserve case
         if pronoun_type.islower():
             return pronoun
@@ -423,7 +460,6 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
         else:
             # Mixed or unknown case, fallback to original casing
             return pronoun
- 
 
     # Check if a seed is provided, if not generate a random one
     if seed == 0:
@@ -447,8 +483,12 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
     field_names = FAKE_DATA_TYPES[type_index][1]
 
     # Create the HTML content
-    template = templates[n]
-    html_content = f"<h1>{template[0]}</h1>"
+    final_soup = get_content_from_nested_structure(templates, template_number)
+    template = (
+        final_soup.h1.get_text(strip=True),
+        str(final_soup),
+    )  # mimic the (h1, content) format
+    html_content = ""
 
     # Prepare a mapping from normalized field names to their index in fake_tuple
     def normalize_field(field):
@@ -481,16 +521,23 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
     # Matches {he}, {He}, {him}, {His}, etc.
     def replace_pronoun(match):
         pronoun = match.group(1)
-        return pronouns_helper(pronoun, seed)
+        replacement = pronouns_helper(pronoun, seed)
+        return replacement.replace("%", "%%")  # escape any percent signs
 
-    html_content = re.sub(r"\{(he|him|his|himself)\}", replace_pronoun, html_content, flags=re.IGNORECASE)
+    # Apply pronouns replacement using pure Python (no regex)
+    pronoun_keys = ["he", "him", "his", "himself"]
 
-    return html_content
+    for key in pronoun_keys:
+        for variant in [key, key.capitalize(), key.upper()]:
+            placeholder = "{" + variant + "}"
+            replacement = pronouns_helper(variant, int(seed))
+            html_content = html_content.replace(placeholder, replacement)
+
+    soup = BeautifulSoup(html_content, "html.parser")
+    return wrap_soup_in_homepage(soup, title="Template")
 
 
 # --- HTML Structure and Template Generation ---
-
-
 def split_html_by_tag(html_content, tag_name):
     soup = BeautifulSoup(html_content, "html.parser")
     tags = soup.find_all(tag_name)
@@ -583,15 +630,14 @@ def get_template(dic, num):
     """
     Selects and returns a value from the nested dictionary based on num.
     """
-    global TOP_LEVEL_COUNT
-    global BOTTOM_LEVEL_COUNT
+    global CONFIG
 
     top_keys = list(dic.keys())
-    top_index = num % TOP_LEVEL_COUNT
+    top_index = num % CONFIG["NUM_TEMPLATE_TYPES"]
     top_key = top_keys[top_index]
 
     bottom_keys = list(dic[top_key].keys())
-    bottom_index = num % BOTTOM_LEVEL_COUNT
+    bottom_index = num % CONFIG["TEMPLATES_PER_TYPE"]
     bottom_key = bottom_keys[bottom_index]
 
     return dic[top_key][bottom_key]
@@ -605,15 +651,10 @@ def generate_html_from_template_number(n):
 def generate_page_for_bot(template_number, seed=0):
     """The main generator function that takes a number and seed and returns full HTML."""
     global nested_sections
-    # Use the new generate_complete_template function
-    # You need to pass the templates list, which should be built from your HTML or config
-    # For this example, let's assume you have a global 'templates' variable
     return generate_complete_template(template_number, nested_sections, seed=seed)
 
 
 # --- Bot/DB Helper Functions (MODIFIED) ---
-
-
 def get_bot_name(user_agent_string: str) -> str | None:
     user_agent = parse(user_agent_string)
     if user_agent.is_bot:
@@ -706,7 +747,6 @@ def get_or_create_bot_template_id(bot_name: str) -> tuple[int, int]:
 
 
 # --- Flask Application Routes ---
-
 app = Flask(__name__)
 
 
