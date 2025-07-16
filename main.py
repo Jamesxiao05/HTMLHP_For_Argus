@@ -147,6 +147,18 @@ FAKE_DATA_TYPES = (
 def parse_master_html(html_content):
     """
     Parses the master HTML file into a nested dictionary of H1 and H2 sections.
+    The structure is:
+    {
+        "H1 Title": {
+            "H2 Title 1": <H2 content>,
+            "H2 Title 2": <H2 content>,
+            ...
+        },
+        ...
+    }
+
+    @param html_content: The HTML content as a string.
+    @return: A nested dictionary structure containing H1 and H2 sections.
     """
     soup = BeautifulSoup(html_content, "html.parser")
     nested_data = {}
@@ -182,6 +194,10 @@ def get_content_from_nested_structure(nested_dict, num):
     """
     Selects and correctly reconstructs a specific H1 and H2 section based on the template number.
     This version is robust and will not crash if FakeData.html has fewer sections than configured.
+
+    @param nested_dict: The nested dictionary structure containing H1 and H2 sections.
+    @param num: The template number to select content for.
+    @return: A BeautifulSoup object containing the selected H1 and H2 content.
     """
     top_keys = list(nested_dict.keys())
     if not top_keys:
@@ -253,6 +269,11 @@ def generate_fake_data_for_type(type_index: int, seed: int = 0):
     Generate a tuple of faker data objects for the given type index and seed.
     If seed is 0, generate a random seed and use it.
     Returns a dictionary: {seed: tuple_of_faker_objects}
+
+    @param type_index: Index of the type in FAKE_DATA_TYPES to generate data for.
+    @param seed: Seed for Faker to generate consistent data. If 0, a random seed is generated.
+    @return: A dictionary with the seed as key and a tuple of generated fake data objects as value.
+    Raises ValueError if type_index is out of range.
     """
 
     # Pick/generate seed
@@ -270,6 +291,12 @@ def generate_fake_data_for_type(type_index: int, seed: int = 0):
         field_name = field[0].lower()
 
         # Map field names to faker methods/objects
+
+        # Check if the field name contains specific keywords to determine the type of data to generate
+
+        # If the field name contains "name" but not "company" or "product", generate a fake name
+        # This allows for more specific name generation, e.g., first and last names
+        # This is to avoid generating company names or product names when the field is just a name
         if (
             "name" in field_name
             and "company" not in field_name
@@ -277,7 +304,15 @@ def generate_fake_data_for_type(type_index: int, seed: int = 0):
         ):
 
             class FakeName:
+                """A class to represent a fake name with first and last names.
+                It generates a full name from first and last names.
+                """
                 def __init__(self, fake):
+                    """Initialize with a Faker instance to generate names.
+                    
+                    @param fake: A Faker instance to generate names.
+                    Generates first and last names, and combines them into a full name.
+                    """
                     self.first_name = fake.first_name()
                     self.last_name = fake.last_name()
                     self.full_name = f"{self.first_name} {self.last_name}"
@@ -286,12 +321,23 @@ def generate_fake_data_for_type(type_index: int, seed: int = 0):
                     return self.full_name
 
             result.append(FakeName(fake))
+        
+        # If the field name contains "company" or "brand", generate a fake company name
+        # This allows for more specific company generation, e.g., brand names or company names
         elif "company" in field_name or "brand" in field_name:
             result.append(fake.company())
+        
+        # If the field name contains "product", generate a fake product name
         elif "product" in field_name:
             result.append(fake.word())
+        
+        # If the field name contains "year", generate a random year
+        # If it contains "date", generate a random date object
         elif "year" in field_name or "date" in field_name:
             result.append(fake.date_object())
+        
+        # If the field name contains "location", "country", "city", or "continent",
+        # generate a fake location object with city, country, continent, and address
         elif (
             "location" in field_name
             or "country" in field_name
@@ -300,9 +346,19 @@ def generate_fake_data_for_type(type_index: int, seed: int = 0):
         ):
             # Return the whole location object for later use
             class FakeLocation:
+                """A class to represent a fake location with city, country, continent, and address.
+                It generates a location object with these attributes."""
                 def __init__(self, fake):
+                    """Initialize with a Faker instance to generate location data.
+                    
+                    @param fake: A Faker instance to generate location data.
+                    Generates city, country, continent, and address attributes.
+                    """
                     self.city = fake.city()
                     self.country = fake.country()
+
+                    # Since Faker does not provide continent directly,
+                    # we randomly select a continent.
                     self.continent = fake.random_element(
                         elements=(
                             "Europe",
@@ -320,12 +376,21 @@ def generate_fake_data_for_type(type_index: int, seed: int = 0):
                     return f"{self.address} ({self.city}, {self.country}, {self.continent})"
 
             result.append(FakeLocation(fake))
+        
+        # If the field name contains "email", generate a fake email address
         elif "email" in field_name:
             result.append(fake.email())
+        
+        # If the field name contains "phone", generate a fake phone number
         elif "phone" in field_name:
             result.append(fake.phone_number())
+        
+        # If the field name contains "number", "count",
+        # generate a random integer between 1 and 10000
         elif "number" in field_name or "count" in field_name:
             result.append(fake.random_int(min=1, max=10000))
+        
+        # If the field name contains "dollars" or "price", generate a fake decimal number
         elif "dollars" in field_name or "price" in field_name:
             result.append(fake.pydecimal(left_digits=5, right_digits=2, positive=True))
         elif "song" in field_name or "concert" in field_name or "collab" in field_name:
@@ -352,7 +417,13 @@ def stringify_fake_datum(fake_datum, type: str):
     """
     Converts a fake datum to a string based on its type.
     Handles complex types like location and returns a formatted string.
+
+    @param fake_datum: The fake data object to convert.
+    @param type: The type of data to convert to string
+    @return: A string representation of the fake datum.
     """
+
+    # If the type is a location then return the appropriate part of the location
     if type.startswith("location"):
         if "city" in type:
             return fake_datum.city
@@ -362,6 +433,8 @@ def stringify_fake_datum(fake_datum, type: str):
             return fake_datum.continent
         else:
             return str(fake_datum.address)
+    
+    # If the type is a name, return the appropriate part of the name
     elif type.startswith("name"):
         if "last" in type:
             return fake_datum.last_name
@@ -369,6 +442,8 @@ def stringify_fake_datum(fake_datum, type: str):
             return fake_datum.first_name
         else:
             return fake_datum.full_name
+    
+    # If the type is a numeric type, handle math expressions or return as string
     elif (
         type.startswith("number")
         or type.startswith("count")
@@ -392,6 +467,8 @@ def stringify_fake_datum(fake_datum, type: str):
                 traceback.print_exc()
                 return str(fake_datum)
         return str(fake_datum)
+
+    # If the type is a date, format it as 'nth of Month YYYY'
     elif type.startswith("date"):
         # Format date as 'nth of Month YYYY'
         if isinstance(fake_datum, (str, int)):
@@ -404,6 +481,8 @@ def stringify_fake_datum(fake_datum, type: str):
             )
 
         return f"{ordinal(fake_datum.day)} of {fake_datum.strftime('%B %Y')}"
+    
+    # If the type is a year, return the year as a string
     elif type.startswith("year"):
         # Return year as a string
         if isinstance(fake_datum, (str, int)):
@@ -418,12 +497,21 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
     Generates a complete HTML template based on the template number and seed.
     Returns a string of HTML content.
     Replaces placeholders like {name}, {location (city)}, etc. with generated fake data.
+
+    @param template_number: The number of the template to generate.
+    @param templates: The nested dictionary structure containing H1 and H2 sections.
+    @param seed: The seed for Faker to generate consistent data. If 0, a random seed is generated.
+    @return: A string of HTML content with placeholders replaced by fake data.
     """
 
     def pronouns_helper(pronoun_type: str, seed: int):
         """
         Given a male pronoun form (e.g., 'he', 'Him', 'His'), use the seed to select
         male, female, or they/them, and return the correct pronoun with preserved case.
+
+        @param pronoun_type: The pronoun type to convert (e.g., 'he', 'Him', 'His').
+        @param seed: The seed to determine which pronoun set to use.
+        @return: The converted pronoun with preserved case.
         """
         # Define pronoun sets
         pronoun_sets = {
@@ -488,16 +576,22 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
     # Create the HTML content
     final_soup = get_content_from_nested_structure(templates, template_number)
     template = (
-        final_soup.h1.get_text(strip=True),
+        final_soup.h1.get_text(strip=True), # type: ignore
         str(final_soup),
     )  # mimic the (h1, content) format
     html_content = ""
 
     # Prepare a mapping from normalized field names to their index in fake_tuple
     def normalize_field(field):
+        """Normalizes a field name for matching.
+        
+        @param field: The field name to normalize.
+        @return: A normalized string suitable for matching.
+        """
         # Lowercase and remove extra spaces for matching
         return re.sub(r"\s+", " ", field.strip().lower())
 
+    # Create a mapping of normalized field names to their index in the fake_tuple
     field_map = {
         normalize_field(f if isinstance(f, str) else f[0]): i
         for i, f in enumerate(field_names)
@@ -505,6 +599,11 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
 
     # Replace placeholders in the template body
     def replace_placeholder(match):
+        """Replaces a placeholder in the template with the corresponding fake data.
+        
+        @param match: The regex match object containing the placeholder.
+        @return: The replacement string for the placeholder.
+        """
         placeholder = match.group(1)
         norm_placeholder = normalize_field(placeholder)
         # Try to find the best match in field_map
@@ -520,16 +619,10 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
         body = "".join(template[1:])  # In case template is a tuple/list of lines
         html_content += re.sub(r"\{([^}]+)\}", replace_placeholder, body)
 
-    # Apply pronouns replacement
-    # Matches {he}, {He}, {him}, {His}, etc.
-    def replace_pronoun(match):
-        pronoun = match.group(1)
-        replacement = pronouns_helper(pronoun, seed)
-        return replacement.replace("%", "%%")  # escape any percent signs
-
     # Apply pronouns replacement using pure Python (no regex)
     pronoun_keys = ["he", "him", "his", "himself"]
 
+    # Add pronouns to the HTML content
     for key in pronoun_keys:
         for variant in [key, key.capitalize(), key.upper()]:
             placeholder = "{" + variant + "}"
@@ -542,10 +635,23 @@ def generate_complete_template(template_number: int, templates, seed: int = 0):
 
 # --- HTML Structure and Template Generation ---
 def split_html_by_tag(html_content, tag_name):
+    """Splits the HTML content into sections based on the specified tag name.
+    Each section is a dictionary with the tag's text as the key and the section's HTML as the value.
+    
+    @param html_content: The HTML content as a string.
+    @param tag_name: The name of the tag to split by (e.g., 'h1', 'h2').
+    @return: A dictionary where keys are the tag's text and values are BeautifulSoup objects
+    containing the section's HTML.
+    """
+
+    # Parse the HTML content and find all tags of the specified type
     soup = BeautifulSoup(html_content, "html.parser")
     tags = soup.find_all(tag_name)
     all_elements = list(soup.descendants)
+
     sections = {}
+
+    # Iterate through the tags and extract the HTML content between them
     for i, tag in enumerate(tags):
         tag_index = all_elements.index(tag)
         if i + 1 < len(tags):
@@ -563,6 +669,14 @@ def split_html_by_tag(html_content, tag_name):
 
 
 def wrap_soup_in_homepage(soup, title="Home"):
+    """    Wraps the provided BeautifulSoup object in a full HTML template with a header and footer.
+    
+    @param soup: The BeautifulSoup object to wrap.
+    @param title: The title of the page to be used in the HTML head.
+    @return: A string containing the full HTML template with the provided soup content.
+    """
+
+
     html_template = f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -632,6 +746,21 @@ def wrap_soup_in_homepage(soup, title="Home"):
 def get_template(dic, num):
     """
     Selects and returns a value from the nested dictionary based on num.
+
+    The dictionary structure is expected to be:
+    {
+        "H1 Title": {
+            "H2 Title 1": <H2 content>,
+            "H2 Title 2": <H2 content>,
+            ...
+        },
+        ...
+    }
+
+    @param dic: The nested dictionary structure containing H1 and H2 sections.
+    @param num: The template number to select content for.
+    @return: The selected H2 content as a BeautifulSoup object.
+    Raises ValueError if num is out of range.
     """
     global CONFIG
 
@@ -647,18 +776,38 @@ def get_template(dic, num):
 
 
 def generate_html_from_template_number(n):
+    """ Generates a full HTML page from a template number.
+    This function is used to generate the homepage with a specific template.
+    
+    @param n: The template number to generate the HTML for.
+    @return: A string containing the full HTML page.
+    Raises ValueError if n is out of range.
+    """
     global nested_sections
     return wrap_soup_in_homepage(get_template(nested_sections, n - 1), title="Home")
 
 
 def generate_page_for_bot(template_number, seed=0):
-    """The main generator function that takes a number and seed and returns full HTML."""
+    """The main generator function that takes a number and seed and returns full HTML.
+    
+    @param template_number: The template number to generate the HTML for.
+    @param seed: The seed for Faker to generate consistent data. If 0, a
+    random seed is generated.
+    @return: A string containing the full HTML page for the bot.
+    """
     global nested_sections
     return generate_complete_template(template_number, nested_sections, seed=seed)
 
 
 # --- Bot/DB Helper Functions (MODIFIED) ---
 def get_bot_name(user_agent_string: str) -> str | None:
+    """    Extracts the bot name from the user agent string if it is a bot.
+    Returns the bot name or None if not a bot.
+
+    @param user_agent_string: The user agent string from the request headers.
+    @return: The bot name if detected, otherwise None.
+    """
+
     user_agent = parse(user_agent_string)
     if user_agent.is_bot:
         return user_agent.browser.family
@@ -667,8 +816,13 @@ def get_bot_name(user_agent_string: str) -> str | None:
 
 def create_new_bot_entry(bot_name: str) -> tuple[int, int]:
     """
-    Generates a completely random template ID and seed for a new bot and saves it.
-    Returns (template_id, seed)
+    Creates a new entry for a bot in the database with a random template ID and seed.
+    If the bot is new, it assigns a completely random template ID and seed.
+    This function also updates the BOT_CACHE with the new template ID and seed.
+    Raises an exception if the Supabase client is not initialized or if the insert fails.
+    
+    @param bot_name: The name of the bot to create an entry for.
+    @return: A tuple containing the new template ID and seed.
     """
     logging.info(
         f"'{bot_name}' is a new bot. Assigning a completely random template and seed."
@@ -681,11 +835,13 @@ def create_new_bot_entry(bot_name: str) -> tuple[int, int]:
         f"Randomly assigned template ID {new_template_id} and seed {new_seed} to '{bot_name}'."
     )
 
+    # Check if Supabase client is initialized
     if supabase is None:
         raise Exception(
             "Supabase client is not initialized. Cannot save new bot entry."
         )
 
+    # Insert the new bot entry into the database
     insert_response = (
         supabase.table("bot_visits")
         .insert(
@@ -701,8 +857,15 @@ def create_new_bot_entry(bot_name: str) -> tuple[int, int]:
 
 def get_or_create_bot_template_id(bot_name: str) -> tuple[int, int]:
     """
-    Checks cache or DB for a bot's template ID and seed. If not found, creates new random ones.
-    Returns (template_id, seed)
+    Retrieves the template ID and seed for a bot from the database or creates a new entry if it doesn't exist.
+    This function first checks the BOT_CACHE for a cached entry. If found, it returns the cached values.
+    If not found in the cache, it queries the database for the bot's template ID and seed.
+    If the bot is new, it creates a new entry in the database and updates the cache.
+    Raises an exception if the Supabase client is not initialized or if the query/update fails.
+    
+    
+    @param bot_name: The name of the bot to get or create a template ID and seed for.
+    @return: A tuple containing the template ID and seed for the bot.
     """
     if (
         bot_name in BOT_CACHE
@@ -757,9 +920,17 @@ app = Flask(__name__)
 
 @app.route("/")
 def serve_content():
+    """Serves the content based on the user agent string.
+    If a bot is detected, it generates a page for the bot using the template ID and seed.
+    If a human user is detected, it serves the default index.html page."""
+    
+    # Get the user agent string from the request headers
     user_agent_string = request.headers.get("User-Agent", "")
     bot_name = get_bot_name(user_agent_string)
 
+
+    # If a bot is detected, generate the page for the bot
+    # If no bot is detected, serve the default index.html page
     if bot_name:
         logging.info(f"Bot detected: '{bot_name}'")
         if not nested_sections:
